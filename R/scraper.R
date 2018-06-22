@@ -8,6 +8,7 @@
 #' @importFrom pbapply pblapply
 #' @importFrom xml2 read_html
 #' @importFrom rvest html_attr html_nodes
+#' @importFrom purrr %>%
 #'
 #' @examples
 #' ids <- retrieve.ids()
@@ -15,9 +16,11 @@
 retrieve.ids <- function() {
   cat("Retrieving UGent IDs\n")
   links <- unlist(pbapply::pblapply(LETTERS, function(chr) {
-    ugent <- xml2::read_html(paste0("https://biblio.ugent.be/person?browse=", chr))
-    links <- rvest::html_attr(rvest::html_nodes(ugent, ".list li a"), "href")
-    links
+    paste0("https://biblio.ugent.be/person?browse=", chr) %>%
+      xml2::read_html() %>%
+      rvest::html_nodes(".list li a") %>%
+      rvest::html_attr("href") %>%
+      keep(grepl("biblio", .))
   }))
   links <- unique(links)
   gsub("^.*/([0-9]*)$", "\\1", links)

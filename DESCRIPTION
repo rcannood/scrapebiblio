@@ -21,5 +21,6 @@ Imports:
     pbapply,
     xml2,
     rvest,
-    RCurl
+    RCurl,
+    purrr
 RoxygenNote: 5.0.1
