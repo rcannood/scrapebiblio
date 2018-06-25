@@ -4,10 +4,12 @@
 \alias{retrieve.publication.data}
 \title{Retrieve publications of UGent authors}
 \usage{
-retrieve.publication.data(ids)
+retrieve.publication.data(ids, mc_cores = 1)
 }
 \arguments{
 \item{ids}{a character vector containing UGent author IDs}
+
+\item{mc_cores}{The number of cores to use, or a qsub qsub_config}
 }
 \value{
 a list containing a publications data frame and a list containing each publication's authors
@@ -22,4 +24,3 @@ goes wrong to try that chunk again.
 ids <- c("001997743793", "801001497901", "801001188309")
 person.data <- retrieve.publication.data(ids)
 }
-

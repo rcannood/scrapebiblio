@@ -23,4 +23,6 @@ Imports:
     rvest,
     RCurl,
     purrr
-RoxygenNote: 5.0.1
+Suggests:
+    qsub
+RoxygenNote: 6.0.1

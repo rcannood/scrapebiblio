@@ -4,10 +4,12 @@
 \alias{retrieve.person.data}
 \title{Retrieve meta data of UGent author IDs}
 \usage{
-retrieve.person.data(ids)
+retrieve.person.data(ids, mc_cores = 1)
 }
 \arguments{
 \item{ids}{a character vector containing UGent author IDs}
+
+\item{mc_cores}{The number of cores to use, or a qsub qsub_config}
 }
 \value{
 a data frame containing information pertaining the given UGent authors
@@ -22,4 +24,3 @@ goes wrong to try that chunk again.
 ids <- c("001997743793", "801001497901", "801001188309")
 person.data <- retrieve.person.data(ids)
 }
-

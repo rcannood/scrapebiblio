@@ -35,37 +35,53 @@ retrieve.ids <- function() {
 #' goes wrong to try that chunk again.
 #'
 #' @param ids a character vector containing UGent author IDs
+#' @param mc_cores The number of cores to use, or a qsub qsub_config
 #'
 #' @return a data frame containing information pertaining the given UGent authors
 #' @export
 #'
-#' @importFrom dplyr bind_rows
+#' @importFrom qsub is_qsub_config qsub_lapply
+#' @importFrom dplyr bind_rows data_frame
 #' @importFrom xml2 read_html
 #' @importFrom rvest html_text html_node html_nodes
-#' @importFrom pbapply pblapply
+#' @importFrom purrr map_df
 #'
 #' @examples
 #' ids <- c("001997743793", "801001497901", "801001188309")
 #' person.data <- retrieve.person.data(ids)
-retrieve.person.data <- function(ids) {
-  check.text <- function(x) if (length(x) > 0) x else NA
-
+retrieve.person.data <- function(ids, mc_cores = 1) {
   cat("Retrieving person data of ", length(ids), " authors\n", sep="")
-  dplyr::bind_rows(pbapply::pblapply(ids, function(id) {
-    url <- paste0("https://biblio.ugent.be/person/", id)
 
-    link <- xml2::read_html(url)
-    name <- rvest::html_text(rvest::html_node(link, "h2"))
-    department <- check.text(rvest::html_text(rvest::html_nodes(link, ".org")))
-    street <- check.text(rvest::html_text(rvest::html_nodes(link, ".adr .street-address")))
-    postalcode <- check.text(rvest::html_text(rvest::html_nodes(link, ".adr .postal-code")))
-    locality <- check.text(rvest::html_text(rvest::html_nodes(link, ".adr .locality")))
-    email <- check.text(rvest::html_text(rvest::html_nodes(link, ".email")))
+  FUN <- function(id) {
+    check.text <- function(x) if (length(x) > 0) x else NA
 
-    data.frame(id, name, department, street, postalcode, locality, email, stringsAsFactors = F)
-  }))
+    data <- paste0("https://biblio.ugent.be/person/", id) %>%
+      xml2::read_html()
+
+    data_frame(
+      id,
+      name = data %>% html_node("h2") %>% html_text() %>% check.text(),
+      department = data %>% html_nodes(".org") %>% html_text() %>% check.text(),
+      street = data %>% html_nodes(".adr .street-address") %>% html_text() %>% check.text(),
+      postalcode = data %>% html_nodes(".adr .postal-code") %>% html_text() %>% check.text(),
+      locality = data %>% html_nodes(".adr .locality") %>% html_text() %>% check.text(),
+      email = data %>% html_nodes(".email") %>% html_text() %>% check.text()
+    )
+  }
+
+  if (qsub::is_qsub_config(mc_cores)) {
+    bind_rows(qsub::qsub_lapply(
+      X = ids,
+      FUN = FUN,
+      qsub_config = mc_cores,
+      qsub_environment = c("ids", "FUN"),
+      qsub_packages = c("tidyverse", "xml2", "rvest")
+    ))
+  } else {
+    if (!is.numeric(mc_cores)) mc_cores <- 1
+    purrr::map_df(ids, FUN, cl = mc_cores)
+  }
 }
-
 
 #' @title Retrieve publications of UGent authors
 #'
@@ -75,6 +91,7 @@ retrieve.person.data <- function(ids) {
 #' goes wrong to try that chunk again.
 #'
 #' @param ids a character vector containing UGent author IDs
+#' @param mc_cores The number of cores to use, or a qsub qsub_config
 #'
 #' @return a list containing a publications data frame and a list containing each publication's authors
 #' @export
@@ -86,23 +103,42 @@ retrieve.person.data <- function(ids) {
 #' @examples
 #' ids <- c("001997743793", "801001497901", "801001188309")
 #' person.data <- retrieve.publication.data(ids)
-retrieve.publication.data <- function(ids) {
+retrieve.publication.data <- function(ids, mc_cores = 1) {
   cat("Retrieving publication data of ", length(ids), " authors \n", sep = "")
-  publications <- dplyr::bind_rows(pbapply::pblapply(ids, function(id) {
+  pub_fun <- function(id) {
     csv   <- RCurl::getURL(paste0("https://biblio.ugent.be/publication/export?q=", id, "&sort=year.desc&format=csv"))
     if (csv != "") {
       read.table(text = csv, sep = ",", header = T, fill = T, quote = "\"", stringsAsFactors = F, colClasses = "character")
     } else {
       NULL
     }
-  }))
+  }
 
-  publications <- dplyr::ungroup(dplyr::slice(dplyr::group_by_(publications, "id"), 1))
+  publications <-
+    if (qsub::is_qsub_config(mc_cores)) {
+      bind_rows(qsub::qsub_lapply(
+        X = ids,
+        FUN = pub_fun,
+        qsub_config = mc_cores,
+        qsub_environment = c("ids", "pub_fun"),
+        qsub_packages = c("tidyverse", "xml2", "rvest")
+      ))
+    } else {
+      if (!is.numeric(mc_cores)) mc_cores <- 1
+      purrr::map_df(ids, pub_fun, cl = mc_cores)
+    }
+
+  publications <-
+    publications %>%
+    group_by(id) %>%
+    slice(1) %>%
+    ungroup()
 
   cat("Parsing author lists\n")
-  publication.authors <- pbapply::pblapply(seq_len(nrow(publications)), function(i) {
+  X <- seq_len(nrow(publications))
+  pub_aut_fun <- function(i) {
     p <- publications[i,]
-    ugent <- dplyr::bind_rows(lapply(strsplit(p$ugent_author, " ; ")[[1]], function(x) {
+    ugent <- bind_rows(lapply(strsplit(p$ugent_author, " ; ")[[1]], function(x) {
       last.name <- gsub("^([^,\\(]*),? ?.*$", "\\1", x)
       first.name <- gsub("^[^,\\(]*,? ?([^\\(]*) \\(.*\\)$", "\\1", x)
       full.name <- gsub("^([^\\(]*) \\(.*\\)$", "\\1", x)
@@ -115,7 +151,21 @@ retrieve.publication.data <- function(ids) {
     other <- other[!other %in% ugent$full.name]
 
     list(id = p$id, ugent.authors = ugent, other.authors = other)
-  })
+  }
+
+  publication.authors <-
+    if (qsub::is_qsub_config(mc_cores)) {
+      qsub::qsub_lapply(
+        X = X,
+        FUN = pub_aut_fun,
+        qsub_config = mc_cores,
+        qsub_environment = c("ids", "pub_aut_fun"),
+        qsub_packages = c("tidyverse", "xml2", "rvest")
+      )
+    } else {
+      if (!is.numeric(mc_cores)) mc_cores <- 1
+      purrr::map(X, pub_aut_fun, cl = mc_cores)
+    }
 
   names(publication.authors) <- publications$id
 

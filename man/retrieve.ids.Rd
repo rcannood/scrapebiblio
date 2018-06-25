@@ -16,4 +16,3 @@ Retrieves all the author IDs by parsing the biblio webpage.
 ids <- retrieve.ids()
 ids[1:10]
 }
-
